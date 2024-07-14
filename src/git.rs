@@ -17,16 +17,20 @@ use std::path::Path;
 pub fn get_git_diff(repo_path: &Path) -> Result<String> {
     info!("Opening repository at path: {:?}", repo_path);
     let repo = Repository::open(repo_path).context("Failed to open repository")?;
-    let head = repo.head().context("Failed to get repository head")?;
-    let head_tree = head.peel_to_tree().context("Failed to peel to tree")?;
+    let index = repo.index().context("Failed to get repository index")?;
 
     let diff = repo
-        .diff_tree_to_index(
-            Some(&head_tree),
-            None,
+        .diff_index_to_workdir(
+            Some(&index),
             Some(DiffOptions::new().ignore_whitespace(true)),
         )
         .context("Failed to generate diff")?;
+
+    // log the diff
+    println!("Diff: {:?}", diff.print(git2::DiffFormat::Patch, |_delta, _hunk, line| {
+        println!("{}", String::from_utf8_lossy(line.content()));
+        true
+    }));
 
     let mut diff_text = Vec::new();
     diff.print(git2::DiffFormat::Patch, |_delta, _hunk, line| {
