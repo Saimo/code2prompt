@@ -120,6 +120,13 @@ pub fn copy_to_clipboard(rendered: &str) -> Result<()> {
     clipboard
         .set_text(rendered.to_string())
         .context("Failed to copy to clipboard")?;
+
+    /*
+        Exiting code2prompt too fast causes the clipboard to not get copied in certain circumstances
+        https://github.com/1Password/arboard/issues/143#issuecomment-2116788092
+     */
+    std::thread::sleep(std::time::Duration::from_millis(200));
+
     println!(
         "{}{}{} {}",
         "[".bold().white(),
