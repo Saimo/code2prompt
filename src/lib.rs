@@ -4,6 +4,8 @@ pub mod path;
 pub mod template;
 pub mod token;
 pub mod comment_remover;
+pub mod config;
+pub mod cli;
 
 pub use filter::should_include_file;
 pub use git::{get_git_diff, get_git_diff_between_branches, get_git_log};

@@ -14,94 +14,22 @@ use indicatif::{ProgressBar, ProgressStyle};
 use log::{debug, error};
 use serde_json::json;
 use std::path::PathBuf;
+use serde::{Deserialize, Serialize};
+use code2prompt::cli::Cli;
+use code2prompt::config::ConfigStore;
 
 // Constants
 const DEFAULT_TEMPLATE_NAME: &str = "default";
 const CUSTOM_TEMPLATE_NAME: &str = "custom";
 
-// CLI Arguments
-#[derive(Parser)]
-#[clap(name = "code2prompt", version = "2.0.0", author = "Mufeed VH")]
-struct Cli {
-    /// Path to the codebase directory
-    #[arg()]
-    path: PathBuf,
-
-    /// Patterns to include
-    #[clap(long)]
-    include: Option<String>,
-
-    /// Patterns to exclude
-    #[clap(long)]
-    exclude: Option<String>,
-
-    /// Include files in case of conflict between include and exclude patterns
-    #[clap(long)]
-    include_priority: bool,
-
-    /// Exclude files/folders from the source tree based on exclude patterns
-    #[clap(long)]
-    exclude_from_tree: bool,    
-
-    /// Display the token count of the generated prompt
-    #[clap(long)]
-    tokens: bool,
-
-    /// Optional tokenizer to use for token count
-    ///
-    /// Supported tokenizers: cl100k (default), p50k, p50k_edit, r50k, gpt2
-    #[clap(short = 'c', long)]
-    encoding: Option<String>,
-
-    /// Optional output file path
-    #[clap(short, long)]
-    output: Option<String>,
-
-    /// Include git diff
-    #[clap(short, long)]
-    diff: bool,
-
-    /// Generate git diff between two branches
-    #[clap(long, value_name = "BRANCHES")]
-    git_diff_branch: Option<String>,
-
-    /// Retrieve git log between two branches
-    #[clap(long, value_name = "BRANCHES")]
-    git_log_branch: Option<String>,
-
-    /// Add line numbers to the source code
-    #[clap(short, long)]
-    line_number: bool,
-
-    /// Disable wrapping code inside markdown code blocks
-    #[clap(long)]
-    no_codeblock: bool,
-
-    /// Use relative paths instead of absolute paths, including the parent directory
-    #[clap(long)]
-    relative_paths: bool,
-
-    /// Optional Disable copying to clipboard
-    #[clap(long)]
-    no_clipboard: bool,
-
-    /// Optional Path to a custom Handlebars template
-    #[clap(short, long)]
-    template: Option<PathBuf>,
-
-    /// Print output as JSON
-    #[clap(long)]
-    json: bool,
-
-    /// Remove comments from the source code
-    #[clap(long)]
-    remove_comments: bool,
-}
-
 fn main() -> Result<()> {
+    // get how many args are passed
+    
     env_logger::init();
-    let args = Cli::parse();
-
+    let cli = Cli::parse();
+    let amount =  std::env::args().len();
+    let args = ConfigStore::save_or_set(&cli.path, cli.clone(), amount)?;
+    
     // Handlebars Template Setup
     let (template_content, template_name) = get_template(&args)?;
     let handlebars = handlebars_setup(&template_content, template_name)?;
