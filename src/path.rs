@@ -3,11 +3,12 @@
 use crate::filter::should_include_file;
 use anyhow::Result;
 use ignore::WalkBuilder;
-use log::debug;
+use log::{debug, info};
 use serde_json::json;
 use std::fs;
 use std::path::Path;
 use termtree::Tree;
+use crate::comment_remover::get_comment_remover;
 
 /// Traverses the directory and returns the string representation of the tree and the vector of JSON file representations.
 ///
@@ -32,11 +33,13 @@ pub fn traverse_directory(
     relative_paths: bool,
     exclude_from_tree: bool,
     no_codeblock: bool,
+    remove_comments: bool, // Add this parameter
 ) -> Result<(String, Vec<serde_json::Value>)> {
     // ~~~ Initialization ~~~
     let mut files = Vec::new();
     let canonical_root_path = root_path.canonicalize()?;
     let parent_directory = label(&canonical_root_path);
+    let mut total_comment_lines_removed = 0;
 
     // ~~~ Build the Tree ~~~
     let tree = WalkBuilder::new(&canonical_root_path)
@@ -71,7 +74,17 @@ pub fn traverse_directory(
                 // ~~~ Process the file ~~~
                 if path.is_file() && should_include_file(path, include, exclude, include_priority) {
                     if let Ok(code_bytes) = fs::read(path) {
-                        let code = String::from_utf8_lossy(&code_bytes);
+                        let mut code = String::from_utf8_lossy(&code_bytes).to_string();
+                        let mut lines_removed = 0;
+
+                        if remove_comments {
+                            let extension = path.extension().and_then(|ext| ext.to_str()).unwrap_or("");
+                            let comment_remover = get_comment_remover(extension);
+                            let (cleaned_code, removed) = comment_remover.remove_comments(&code);
+                            code = cleaned_code;
+                            lines_removed = removed;
+                            total_comment_lines_removed += lines_removed;
+                        }
 
                         let code_block = wrap_code_block(&code, path.extension().and_then(|ext| ext.to_str()).unwrap_or(""), line_number, no_codeblock);
 
@@ -83,11 +96,12 @@ pub fn traverse_directory(
                             };
 
                             files.push(json!({
-                                "path": file_path,
-                                "extension": path.extension().and_then(|ext| ext.to_str()).unwrap_or(""),
-                                "code": code_block,
-                            }));
-                            debug!(target: "included_files", "Included file: {}", file_path);
+                    "path": file_path,
+                    "extension": path.extension().and_then(|ext| ext.to_str()).unwrap_or(""),
+                    "code": code_block,
+                    "comments_removed": lines_removed,
+                }));
+                            debug!(target: "included_files", "Included file: {}, Comments removed: {}", file_path, lines_removed);
                         } else {
                             debug!("Excluded file (empty or invalid UTF-8): {}", path.display());
                         }
@@ -101,6 +115,10 @@ pub fn traverse_directory(
 
             root
         });
+
+    if remove_comments {
+        info!("Total comment lines removed: {}", total_comment_lines_removed);
+    }
 
     Ok((tree.to_string(), files))
 }

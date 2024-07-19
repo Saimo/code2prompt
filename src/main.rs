@@ -91,7 +91,11 @@ struct Cli {
 
     /// Print output as JSON
     #[clap(long)]
-    json: bool,    
+    json: bool,
+
+    /// Remove comments from the source code
+    #[clap(long)]
+    remove_comments: bool,
 }
 
 fn main() -> Result<()> {
@@ -109,8 +113,7 @@ fn main() -> Result<()> {
     let include_patterns = parse_patterns(&args.include);
     let exclude_patterns = parse_patterns(&args.exclude);
 
-    // Traverse the directory
-    let create_tree = traverse_directory(
+    let (tree, files) = traverse_directory(
         &args.path,
         &include_patterns,
         &exclude_patterns,
@@ -119,22 +122,23 @@ fn main() -> Result<()> {
         args.relative_paths,
         args.exclude_from_tree,
         args.no_codeblock,
-    );
+        args.remove_comments,
+    )?;
 
-    let (tree, files) = match create_tree {
-        Ok(result) => result,
-        Err(e) => {
-            spinner.finish_with_message("Failed!".red().to_string());
-            eprintln!(
-                "{}{}{} {}",
-                "[".bold().white(),
-                "!".bold().red(),
-                "]".bold().white(),
-                format!("Failed to build directory tree: {}", e).red()
-            );
-            std::process::exit(1);
-        }
-    };
+    if args.remove_comments {
+        let total_comments_removed: usize = files
+            .iter()
+            .filter_map(|file| file["comments_removed"].as_u64())
+            .sum::<u64>() as usize;
+
+        println!(
+            "{}{}{} {}",
+            "[".bold().white(),
+            "i".bold().blue(),
+            "]".bold().white(),
+            format!("Total comment lines removed: {}", total_comments_removed).blue()
+        );
+    }
 
     // Git Diff
     let git_diff = if args.diff {
