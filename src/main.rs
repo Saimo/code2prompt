@@ -3,7 +3,8 @@
 //! Author: Mufeed VH (@mufeedvh)
 //! Contributor: Olivier D'Ancona (@ODAncona)
 
-use anyhow::{Context, Result};
+use std::{env, fs};
+use anyhow::{anyhow, Context, Result};
 use clap::Parser;
 use code2prompt::{
     copy_to_clipboard, get_model_info, get_tokenizer, get_git_diff, get_git_diff_between_branches, get_git_log,
@@ -13,7 +14,7 @@ use colored::*;
 use indicatif::{ProgressBar, ProgressStyle};
 use log::{debug, error};
 use serde_json::json;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use code2prompt::cli::Cli;
 use code2prompt::config::ConfigStore;
@@ -224,13 +225,80 @@ fn parse_patterns(patterns: &Option<String>) -> Vec<String> {
 /// * `Result<(String, &str)>` - A tuple containing the template content and name
 fn get_template(args: &Cli) -> Result<(String, &str)> {
     if let Some(template_path) = &args.template {
-        let content = std::fs::read_to_string(template_path)
-            .context("Failed to read custom template file")?;
-        Ok((content, CUSTOM_TEMPLATE_NAME))
+        // Try to read the custom template file
+        match std::fs::read_to_string(template_path) {
+            Ok(content) => Ok((content, CUSTOM_TEMPLATE_NAME)),
+            Err(_) => {
+                // If the file doesn't exist, check if it's a predefined template name
+                let home_dir = env::var("HOME").context("Failed to get HOME directory")?;
+                let template_dir = Path::new(&home_dir).join(".code2prompt").join("templates");
+                let predefined_path = template_dir.join(format!("{}.hbs", template_path.to_string_lossy()));
+
+                if predefined_path.exists() {
+                    let content = std::fs::read_to_string(&predefined_path)
+                        .context(format!("Failed to read predefined template file: {:?}", predefined_path))?;
+                    Ok((content, CUSTOM_TEMPLATE_NAME))
+                } else {
+                    // List available templates
+                    let available_templates = list_available_templates()?;
+                    let template_list = available_templates.join(", ");
+
+                    Err(anyhow!(
+                        "Custom template file not found: {}.\n\nAvailable templates: {}",
+                        template_path.display(),
+                        template_list
+                    ))
+                }
+            }
+        }
     } else {
-        Ok((
-            include_str!("default_template.hbs").to_string(),
-            DEFAULT_TEMPLATE_NAME,
-        ))
+        // Read the default template
+        let home_dir = env::var("HOME").context("Failed to get HOME directory")?;
+        let default_template_path = Path::new(&home_dir)
+            .join(".code2prompt")
+            .join("templates")
+            .join("default_template.hbs");
+
+        let content = std::fs::read_to_string(&default_template_path)
+            .context(format!("Failed to read default template file: {:?}", default_template_path))?;
+        Ok((content, DEFAULT_TEMPLATE_NAME))
     }
+}
+
+/// Lists available templates in the user's home directory
+///
+/// # Returns
+///
+/// * `Result<Vec<String>>` - A vector of template names
+///
+/// # Errors
+///
+/// * If the HOME directory cannot be retrieved
+/// * If the templates directory cannot be read
+///
+/// # Example
+///
+/// ```
+/// let templates = list_available_templates().unwrap();
+/// for template in templates {
+///    println!("{}", template);
+/// }
+/// ```
+///
+/// This will print the names of all available templates.
+fn list_available_templates() -> Result<Vec<String>> {
+    let home_dir = env::var("HOME").context("Failed to get HOME directory")?;
+    let template_dir = Path::new(&home_dir).join(".code2prompt").join("templates");
+
+    let mut templates = Vec::new();
+    for entry in fs::read_dir(template_dir).context("Failed to read templates directory")? {
+        let entry = entry.context("Failed to read directory entry")?;
+        let path = entry.path();
+        if path.is_file() && path.extension().map_or(false, |ext| ext == "hbs") {
+            if let Some(name) = path.file_stem() {
+                templates.push(name.to_string_lossy().into_owned());
+            }
+        }
+    }
+    Ok(templates)
 }
